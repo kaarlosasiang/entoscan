@@ -27,6 +27,7 @@ const AuthProvider = ({ children }) => {
       setUser({ ...responseUser, avatar: userAvatar.toString() });
     } catch (error) {
       console.error(error.message);
+      setUser(false);
     } finally {
       setIsLoading(false);
     }
@@ -52,7 +53,19 @@ const AuthProvider = ({ children }) => {
       setIsLoading(false);
     }
   };
-  const signout = async () => {};
+
+  const signout = async () => {
+    setIsLoading(true);
+    try {
+      await account.deleteSession("current");
+      setSession(false);
+      setUser(false);
+    } catch (error) {
+      console.error(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const contextData = { session, user, signin, signout };
   return (

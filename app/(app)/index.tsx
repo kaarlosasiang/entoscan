@@ -12,9 +12,14 @@ import icons from "@/constants/icons";
 import Search from "@/app/components/Search";
 import Filters from "@/app/components/Filters";
 import { useAuth } from "@/contexts/AuthContext";
+import { Redirect } from "expo-router";
 
 export default function Index() {
   const { user } = useAuth();
+
+  if (!user) {
+    return <Redirect href="/signin" />;
+  }
 
   return (
     <SafeAreaView className={"bg-white h-full"}>

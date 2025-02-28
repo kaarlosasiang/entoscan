@@ -33,10 +33,10 @@ const TabIcon = ({
 );
 
 export default function AppLayout() {
-  const { session } = useAuth();
+  const { user } = useAuth();
 
-  if (!session) {
-    return <Redirect href="/onboarding" />;
+  if (!user) {
+    return <Redirect href="/signin" />;
   }
 
   return (
@@ -63,12 +63,12 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="modules"
+        name="classes"
         options={{
-          title: "Modules",
+          title: "Classes",
           headerShown: false,
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon={icons.modules} focused={focused} title="Modules" />
+            <TabIcon icon={icons.modules} focused={focused} title="Classes" />
           ),
         }}
       />

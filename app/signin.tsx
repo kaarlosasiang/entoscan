@@ -22,7 +22,7 @@ const SignIn = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
-  const { session, signin } = useAuth();
+  const { user, signin } = useAuth();
 
   const validateForm = () => {
     let isValid = true;
@@ -66,12 +66,10 @@ const SignIn = () => {
   };
 
   useEffect(() => {
-    console.log(session);
-    
-    if(session){
-      <Redirect href="/"/>
+    if (user) {
+      <Redirect href="/" />;
     }
-  });
+  }, [user]);
 
   return (
     <SafeAreaView className="flex-1 justify-center bg-white">

@@ -36,6 +36,7 @@ import wifi from "@/assets/icons/wifi.png";
 import location from "@/assets/icons/location.png";
 import edit from "@/assets/icons/edit.png";
 import qrcode from "@/assets/icons/qr-code.png";
+import file from "@/assets/icons/file.png";
 
 export default {
   home,
@@ -76,4 +77,5 @@ export default {
   location,
   edit,
   qrcode,
+  file
 };
