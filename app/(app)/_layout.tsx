@@ -1,5 +1,5 @@
-import React from "react";
-import { Tabs, Redirect } from "expo-router";
+import React, { useEffect } from "react";
+import { Redirect, Tabs, useRouter } from "expo-router";
 import { Image, Text, View, ImageSourcePropType } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import icons from "@/constants/icons";
@@ -33,11 +33,17 @@ const TabIcon = ({
 );
 
 export default function AppLayout() {
-  const { user } = useAuth();
+  const { session, role } = useAuth();
+  // console.log(role);
+  
 
-  if (!user) {
-    return <Redirect href="/signin" />;
-  }
+  useEffect(() => {
+    if (!session) {
+      <Redirect href="/signin" />;
+    } else {
+      <Redirect href="/" />;
+    }
+  }, [session]);
 
   return (
     <Tabs
@@ -76,9 +82,32 @@ export default function AppLayout() {
         name="scanner"
         options={{
           title: "Scan",
+          href: role === "student" ? "/scanner" : null,
           headerShown: false,
           tabBarIcon: ({ focused }) => (
             <TabIcon icon={icons.qrcode} focused={focused} title="Scan" />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="myGallery"
+        options={{
+          title: "Gallery",
+          headerShown: false,
+          href: role === "student" ? "/myGallery" : null,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon icon={icons.gallery} focused={focused} title="Gallery" />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="faculties"
+        options={{
+          title: "Faculties",
+          headerShown: false,
+          href: role === "admin" ? "/faculties" : null,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon icon={icons.user} focused={focused} title="Faculties" />
           ),
         }}
       />

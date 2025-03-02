@@ -8,10 +8,11 @@ const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState(false);
   const [user, setUser] = useState(false);
+  const [role, setRole] = useState(false);
 
   useEffect(() => {
     init();
-  });
+  },[user]);
 
   const init = async () => {
     checkAuth();
@@ -25,6 +26,7 @@ const AuthProvider = ({ children }) => {
       const responseUser = await account.get();
       const userAvatar = avatar.getInitials(responseUser.name);
       setUser({ ...responseUser, avatar: userAvatar.toString() });
+      setRole(responseUser.labels[0]);
     } catch (error) {
       console.error(error.message);
       setUser(false);
@@ -43,10 +45,13 @@ const AuthProvider = ({ children }) => {
         email,
         password
       );
+      const responseUser = await account.get();
 
       setSession(responseSession);
-      const responseUser = await account.get();
       setUser(responseUser);
+      console.log(responseUser.labels[0]);
+      
+      setRole(responseUser.labels[0]);
     } catch (error) {
       console.error(error.message);
     } finally {
@@ -67,7 +72,7 @@ const AuthProvider = ({ children }) => {
     }
   };
 
-  const contextData = { session, user, signin, signout };
+  const contextData = { session, user, role, signin, signout };
   return (
     <AuthContext.Provider value={contextData}>
       {isLoading ? <LoadingPage /> : children}

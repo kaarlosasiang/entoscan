@@ -65,12 +65,6 @@ const SignIn = () => {
     }
   };
 
-  useEffect(() => {
-    if (user) {
-      <Redirect href="/" />;
-    }
-  }, [user]);
-
   return (
     <SafeAreaView className="flex-1 justify-center bg-white">
       <View className="px-6 pt-8">

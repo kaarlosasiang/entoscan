@@ -4,11 +4,12 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
-  TextInput,
   Modal,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { config, database, storage } from "@/lib/appwrite";
@@ -17,6 +18,8 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import * as DocumentPicker from "expo-document-picker";
+import { ID } from "react-native-appwrite";
 
 const ClassCard = ({ title, description, image, days, time, onPress }) => (
   <TouchableOpacity
@@ -47,11 +50,22 @@ const Classes = () => {
   const [loading, setLoading] = useState(false);
   const [modules, setModules] = useState([]);
   const [downloading, setDownloading] = useState(false);
-  const { user } = useAuth();
+  const [isAddClassModalVisible, setIsAddClassModalVisible] = useState(false);
+  const [newClass, setNewClass] = useState({
+    name: "",
+    description: "",
+    days: "",
+    time: "",
+    faculty: "",
+  });
+  const [facultyList, setFacultyList] = useState([]);
+  const { user, role } = useAuth();
+
   const navigation = useNavigation();
 
   useEffect(() => {
     checkEnrollment();
+    fetchFacultyList();
   }, []);
 
   const checkEnrollment = async () => {
@@ -69,7 +83,14 @@ const Classes = () => {
         setEnrolledClass(enrolledClass);
         fetchModules(enrolledClass.modules);
       } else {
-        setClasses(response.documents);
+        if (role === "faculty") {
+          const facultyClasses = response.documents.filter(
+            (classItem) => classItem.faculty === user.$id
+          );
+          setClasses(facultyClasses);
+        } else {
+          setClasses(response.documents);
+        }
       }
     } catch (error) {
       console.error(error);
@@ -90,10 +111,30 @@ const Classes = () => {
     }
   };
 
+  const fetchFacultyList = async () => {
+    try {
+      const response = await database.listDocuments(
+        config.db,
+        config.facultiesCollectionId
+      );
+
+      // const faculty = response.documents.filter((user) =>
+      //   user.labels.includes("faculty")
+      // );
+      setFacultyList(response.documents);
+    } catch (error) {
+      console.error("Fetch Faculty", error);
+    }
+  };
+
   const handleClassPress = (classItem) => {
     setSelectedClass(classItem);
-    setIsModalVisible(true);
-    fetchModules(classItem.modules);
+    if (role === "student") {
+      setIsModalVisible(true);
+    } else {
+      setEnrolledClass(classItem);
+      fetchModules(classItem.modules);
+    }
   };
 
   const handleEnrollPress = async (item) => {
@@ -173,12 +214,132 @@ const Classes = () => {
     setLoading(false);
   };
 
-  if (enrolledClass) {
+  const handleAddModule = async () => {
+    try {
+      // Step 1: Pick the document
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "text/plain",
+        ],
+        copyToCacheDirectory: true, // This ensures the file is accessible
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const selectedFile = result.assets[0];
+
+      // Step 2: Convert file to base64
+      const base64 = await FileSystem.readAsStringAsync(selectedFile.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Step 3: Create a FormData instance
+      // Step 4: Upload to Appwrite
+      const fileId = ID.unique();
+
+      const uploadResponse = await storage.createFile(
+        "67b9e53c000c0291cb9c",
+        fileId,
+        {
+          uri: selectedFile.uri,
+          name: selectedFile.name,
+          type: selectedFile.mimeType,
+          size: selectedFile.size,
+        }
+      );
+
+      // Step 5: Update the class document with the new module
+      if (uploadResponse) {
+        const updatedModules = [...enrolledClass.modules, fileId];
+        await database.updateDocument(
+          config.db,
+          config.classesCollectionId,
+          enrolledClass.$id,
+          { modules: updatedModules }
+        );
+
+        // Step 6: Refresh the modules list
+        fetchModules(updatedModules);
+        Alert.alert("Success", "Module uploaded successfully");
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      Alert.alert(
+        "Upload Failed",
+        "There was an error uploading the file. Please try again."
+      );
+    }
+  };
+
+  const handleDeleteModule = async (moduleId) => {
+    // Implement the logic to delete a module
+  };
+
+  const handleEditClass = async (classItem) => {
+    // Implement the logic to edit a class
+  };
+
+  const handleDeleteClass = async (classId) => {
+    // Implement the logic to delete a class
+  };
+
+  const handleAddClass = async () => {
+    setLoading(true);
+    try {
+      const newClassDocument = {
+        ...newClass,
+        students: [],
+        modules: [],
+      };
+      await database.createDocument(
+        config.db,
+        config.classesCollectionId,
+        ID.unique(),
+        newClassDocument
+      );
+
+      setClasses((prevClasses) => [...prevClasses, newClassDocument]);
+      setIsAddClassModalVisible(false);
+      setNewClass({
+        name: "",
+        description: "",
+        days: "",
+        time: "",
+        faculty: "",
+      });
+    } catch (error) {
+      console.error(error);
+    }
+    setLoading(false);
+  };
+
+  if (
+    enrolledClass &&
+    (role === "faculty" || role === "admin" || role === "student")
+  ) {
     return (
       <SafeAreaView className="flex h-full w-full bg-white relative">
+        {role !== "student" && (
+          <View className="pl-4">
+            <TouchableOpacity
+              onPress={() => setEnrolledClass(null)}
+              className="size-10 bg-gray-200 p-2 rounded-full"
+            >
+              <Image source={icons.backArrow} className="size-6" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View className="p-4">
           <Image
-            source={{ uri: "https://placehold.co/600x400/png" }}
+            source={{
+              uri: "https://www.gstatic.com/classroom/themes/img_reachout.jpg",
+            }}
             className="w-full h-52 rounded-lg mb-4"
           />
           <Text className="text-2xl font-bold mb-2">{enrolledClass.name}</Text>
@@ -188,48 +349,64 @@ const Classes = () => {
           <Text className="text-base mb-2">Time: {enrolledClass.time}</Text>
           <Text className="text-base">Days: {enrolledClass.days}</Text>
         </View>
-        <View className="p-4">
-          <Text className="text-xl font-bold mb-4">Modules</Text>
+        <View className="px-4">
+          <View className="flex flex-row justify-between items-center mb-4">
+            <Text className="text-xl font-bold">Modules</Text>
+            {role === "faculty" && (
+              <TouchableOpacity
+                onPress={handleAddModule}
+                className="px-4 py-2 bg-blue-500 rounded-full"
+              >
+                <Text className="text-white text-center">Add Module</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <FlatList
             data={modules}
             keyExtractor={(item) => item.$id}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => handleDownload(item.$id, item.name)}
-                disabled={downloading}
-                className="mb-2"
-              >
-                <View className="bg-white pl-2 py-4 pr-4 rounded-2xl border border-slate-200">
-                  <View className="flex flex-row gap-2 items-center">
-                    <Image source={icons.file} className="size-14" />
-                    <View>
-                      <Text className="font-bold text-wrap">{item.name}</Text>
-                      <Text className="text-black-100 text-sm">
-                        Tap to download
-                      </Text>
-                    </View>
-                    {downloading && (
-                      <ActivityIndicator size="small" color="#0000ff" />
-                    )}
+              <View className="bg-white pl-2 py-4 pr-4 rounded-2xl border border-slate-200 mb-2">
+                <View className="flex flex-row gap-2 items-center">
+                  <Image source={icons.file} className="size-14" />
+                  <View>
+                    <Text className="font-bold text-wrap">{item.name}</Text>
+                    <Text className="text-black-100 text-sm">
+                      Tap to download
+                    </Text>
                   </View>
+                  {downloading && (
+                    <ActivityIndicator size="small" color="#0000ff" />
+                  )}
                 </View>
-              </TouchableOpacity>
+                {role === "faculty" && (
+                  <TouchableOpacity
+                    onPress={() => handleDeleteModule(item.$id)}
+                    className="mt-2 px-4 py-2 bg-red-500 rounded-full"
+                  >
+                    <Text className="text-white text-center">
+                      Delete Module
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           />
-          {enrolledClass && (
-            <TouchableOpacity
-              onPress={handleDropClass}
-              className="px-4 rounded-full bg-red-500 py-2 mt-4"
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-center font-rubik-medium text-white">
-                  Drop Class
-                </Text>
-              )}
-            </TouchableOpacity>
+
+          {role === "admin" && (
+            <View className="flex flex-row justify-between mt-4">
+              <TouchableOpacity
+                onPress={() => handleEditClass(enrolledClass)}
+                className="px-4 py-2 bg-green-500 rounded-full"
+              >
+                <Text className="text-white text-center">Edit Class</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleDeleteClass(enrolledClass.$id)}
+                className="px-4 py-2 bg-red-500 rounded-full"
+              >
+                <Text className="text-white text-center">Delete Class</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </SafeAreaView>
@@ -254,6 +431,7 @@ const Classes = () => {
                 image: "https://placehold.co/400x100/000000/svg",
               })
             } // Placeholder image URL
+            key={item.$id}
           />
         )}
         contentContainerStyle={{ padding: 16 }}
@@ -263,56 +441,144 @@ const Classes = () => {
             <Text className={"text-xl font-rubik-bold text-black-300"}>
               Available Classes
             </Text>
+            {role === "admin" && (
+              <TouchableOpacity
+                onPress={() => setIsAddClassModalVisible(true)}
+                className="px-4 py-2 bg-blue-500 rounded-full"
+              >
+                <Text className="text-white text-center">Add Class</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
 
-      <Modal visible={isModalVisible} transparent={true}>
-        <View className="flex-1 justify-center items-center bg-black/80">
-          <View className="bg-white p-6 rounded-2xl w-full max-w-96">
-            {selectedClass && (
-              <>
-                <Image
-                  source={{ uri: "https://placehold.co/600x400/png" }}
-                  className="w-full h-52 rounded-lg mb-4"
-                />
-                <Text className="text-2xl font-bold mb-2">
-                  {selectedClass.name}
-                </Text>
-                <Text className="text-base text-gray-600 mb-2">
-                  {selectedClass.description}
-                </Text>
-                <Text className="text-base mb-2">
-                  Time: {selectedClass.time}
-                </Text>
-                <Text className="text-base">Days: {selectedClass.days}</Text>
+      {role === "student" && (
+        <Modal visible={isModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96">
+              {selectedClass && (
+                <>
+                  <Image
+                    source={{ uri: "https://placehold.co/600x400/png" }}
+                    className="w-full h-52 rounded-lg mb-4"
+                  />
+                  <Text className="text-2xl font-bold mb-2">
+                    {selectedClass.name}
+                  </Text>
+                  <Text className="text-base text-gray-600 mb-2">
+                    {selectedClass.description}
+                  </Text>
+                  <Text className="text-base mb-2">
+                    Time: {selectedClass.time}
+                  </Text>
+                  <Text className="text-base">Days: {selectedClass.days}</Text>
 
-                <View className="flex flex-row justify-between items-center mt-4">
-                  <TouchableOpacity
-                    onPress={() => setIsModalVisible(false)}
-                    className="rounded-full"
-                  >
-                    <Text className="text-center">Close</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleEnrollPress(selectedClass)}
-                    className="px-4 rounded-full bg-primary-300 py-2"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text className="text-center font-rubik-medium text-white ">
-                        Enroll Class
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                  <View className="flex flex-row justify-between items-center mt-4">
+                    <TouchableOpacity
+                      onPress={() => setIsModalVisible(false)}
+                      className="rounded-full"
+                    >
+                      <Text className="text-center">Close</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleEnrollPress(selectedClass)}
+                      className="px-4 rounded-full bg-primary-300 py-2"
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text className="text-center font-rubik-medium text-white ">
+                          Enroll Class
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
+
+      {role === "admin" && (
+        <Modal visible={isAddClassModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96">
+              <Text className="text-2xl font-bold mb-4">Add New Class</Text>
+              <TextInput
+                placeholder="Class Name"
+                value={newClass.name}
+                onChangeText={(text) =>
+                  setNewClass({ ...newClass, name: text })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              />
+              <TextInput
+                placeholder="Description"
+                value={newClass.description}
+                onChangeText={(text) =>
+                  setNewClass({ ...newClass, description: text })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              />
+              <TextInput
+                placeholder="Days (e.g. MWF)"
+                value={newClass.days}
+                onChangeText={(text) =>
+                  setNewClass({ ...newClass, days: text })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              />
+              <TextInput
+                placeholder="Time (e.g. 1:00-2:30pm)"
+                value={newClass.time}
+                onChangeText={(text) =>
+                  setNewClass({ ...newClass, time: text })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              />
+              <Picker
+                selectedValue={newClass.faculty}
+                onValueChange={(itemValue) =>
+                  setNewClass({ ...newClass, faculty: itemValue })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              >
+                {facultyList.map((faculty) => (
+                  <Picker.Item
+                    key={faculty.$id}
+                    label={faculty.name}
+                    value={faculty.$id}
+                  />
+                ))}
+              </Picker>
+              <View className="flex flex-row justify-between items-center mt-4">
+                <TouchableOpacity
+                  onPress={() => setIsAddClassModalVisible(false)}
+                  className="rounded-full"
+                >
+                  <Text className="text-center">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleAddClass}
+                  className="px-4 rounded-full bg-primary-300 py-2"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-center font-rubik-medium text-white ">
+                      Add Class
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };

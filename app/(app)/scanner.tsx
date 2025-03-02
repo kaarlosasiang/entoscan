@@ -160,6 +160,8 @@ export default function Scanner() {
       });
 
       const response = await predictionFormApi.post("/classify/", formData);
+      console.log(response.data);
+      
       const { predicted_class, confidence } = response.data;
 
       // Set predefined name and description based on classification
