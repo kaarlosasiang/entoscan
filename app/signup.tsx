@@ -12,9 +12,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import MyStatusBar from "./components/MyStatusBar";
 import icons from "@/constants/icons";
 import images from "@/constants/images";
-import { Link } from "expo-router";
+import { Link, Redirect } from "expo-router";
 import { account, registerUser } from "@/lib/appwrite";
 import { ID } from "react-native-appwrite";
+import { useAuth } from "@/contexts/AuthContext";
 
 const SignUp = () => {
   const [firstName, setFirstName] = useState("");
@@ -32,6 +33,11 @@ const SignUp = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const { user, setSession, setUser, setRole } = useAuth();
+
+  if (user) {
+    return <Redirect href="/" />;
+  }
 
   const validateForm = () => {
     let isValid = true;
@@ -84,12 +90,43 @@ const SignUp = () => {
     const fullname = `${firstName} ${lastName}`;
 
     try {
-      const user = await account.create(ID.unique(), email, password, fullname);
-      console.log("User registered:", user);
+      // Create user with basic info
+      const user = await account.create(
+        ID.unique(),
+        email,
+        password,
+        fullname
+      );
+      console.log("User created:", user);
+
+      // Login the user
+      const responseSession = await account.createEmailPasswordSession(
+        email,
+        password
+      );
+      console.log("User logged in:", responseSession);
+
+      // Create a team for the user to assign role
+      const team = await teams.create(
+        ID.unique(),
+        'students',
+        ['student']
+      );
+      console.log("Team created:", team);
+
+      // Add user to the team
+      await teams.createMembership(
+        team.$id,
+        user.$id,
+        ['student']
+      );
+
+      setSession(responseSession);
+      setUser(user);
+      setRole('student');
       return user;
     } catch (error: any) {
       console.log(error.message);
-
       Alert.alert("Error", error.message, [{ text: "OK" }]);
       return error;
     } finally {

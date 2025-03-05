@@ -49,8 +49,6 @@ const AuthProvider = ({ children }) => {
 
       setSession(responseSession);
       setUser(responseUser);
-      console.log(responseUser.labels[0]);
-      
       setRole(responseUser.labels[0]);
     } catch (error) {
       console.error(error.message);
@@ -72,7 +70,7 @@ const AuthProvider = ({ children }) => {
     }
   };
 
-  const contextData = { session, user, role, signin, signout };
+  const contextData = { session, user, role, signin, signout, setSession, setUser, setRole };
   return (
     <AuthContext.Provider value={contextData}>
       {isLoading ? <LoadingPage /> : children}

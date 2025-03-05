@@ -4,6 +4,7 @@ import {
   CameraType,
   CameraView,
   useCameraPermissions,
+  FlashMode, // Add this import
 } from "expo-camera";
 import {
   Button,
@@ -101,6 +102,9 @@ export default function Scanner() {
   const [features, setFeatures] = useState("");
   const [habitat, setHabitat] = useState("");
   const [confidenceLevel, setConfidenceLevel] = useState("");
+  const [flashMode, setFlashMode] = useState<FlashMode>("on");
+  const [zoom, setZoom] = useState(0);
+  const [isValidInsect, setIsInvalidInsect] = useState(true);
 
   useEffect(() => {
     const getAllFiles = async () => {
@@ -138,7 +142,11 @@ export default function Scanner() {
 
   async function takePicture() {
     if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 1,
+        ratio: "4:3", // Set the aspect ratio to 4:3
+        width: 1600, // This will automatically set height to 1200 for 4:3
+      });
       setCapturedImage(photo.uri);
       setIsModalVisible(true);
       setIsLoading(true);
@@ -161,8 +169,13 @@ export default function Scanner() {
 
       const response = await predictionFormApi.post("/classify/", formData);
       console.log(response.data);
-      
+
       const { predicted_class, confidence } = response.data;
+      if (
+        predicted_class === "not an insect" ||
+        predicted_class === "non betocerini tribe"
+      )
+        setIsInvalidInsect(false);
 
       // Set predefined name and description based on classification
       const insectInfo = insectData[predicted_class];
@@ -288,7 +301,43 @@ export default function Scanner() {
         style={{ flex: 1 }}
         facing={facing}
         autofocus="on"
+        ratio="4:3"
+        zoom={zoom}
       >
+        <View className="absolute top-10 right-4 flex flex-col items-center gap-4">
+          {/* Flash Toggle */}
+          <TouchableOpacity
+            onPress={() =>
+              setFlashMode((current) => (current === "on" ? "off" : "on"))
+            }
+            className="bg-black/50 p-3 rounded-full"
+          >
+            <Text className="text-white text-xl">
+              {flashMode === "on" ? "⚡" : "⚡️"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Zoom Controls */}
+          <View className="bg-black/50 rounded-full p-2 flex items-center">
+            <TouchableOpacity
+              onPress={() => setZoom(Math.min(1, zoom + 0.1))}
+              className="p-2"
+            >
+              <Text className="text-white text-xl">+</Text>
+            </TouchableOpacity>
+
+            <Text className="text-white">{Math.round(zoom * 100)}%</Text>
+
+            <TouchableOpacity
+              onPress={() => setZoom(Math.max(0, zoom - 0.1))}
+              className="p-2"
+            >
+              <Text className="text-white text-xl">-</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Existing capture button View */}
         <View className="flex-1 flex-row justify-center items-end mb-24">
           <TouchableOpacity
             onPress={takePicture}
@@ -313,7 +362,7 @@ export default function Scanner() {
                 <>
                   <Image
                     source={{ uri: capturedImage }}
-                    style={{ width: "100%", height: 300 }}
+                    style={{ width: "100%", height: 400 }}
                     className="rounded-xl"
                   />
                   <View className="mt-4 flex flex-col items-center">
@@ -348,12 +397,14 @@ export default function Scanner() {
                     >
                       <Text className="text-black font-semibold">Cancel</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={submitHandler}
-                      className="bg-blue-500 px-4 py-2 rounded-full"
-                    >
-                      <Text className="text-white font-semibold">Upload</Text>
-                    </TouchableOpacity>
+                    {!isValidInsect && (
+                      <TouchableOpacity
+                        onPress={submitHandler}
+                        className="bg-blue-500 px-4 py-2 rounded-full"
+                      >
+                        <Text className="text-white font-semibold">Upload</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </>
               )}

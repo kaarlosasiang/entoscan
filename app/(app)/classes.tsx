@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import React, { useEffect, useState } from "react";
@@ -20,24 +21,32 @@ import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
 import { ID } from "react-native-appwrite";
+import { Ionicons } from "@expo/vector-icons";
 
 const ClassCard = ({ title, description, image, days, time, onPress }) => (
   <TouchableOpacity
-    className="bg-white p-4 m-2 rounded-2xl border border-slate-200"
+    className="bg-white m-2 rounded-2xl border border-slate-200 mx-5"
     onPress={onPress}
   >
-    <Image
-      source={{ uri: image }}
-      className="w-full h-40 rounded-lg mb-2 bg-slate-100"
-    />
-    <View className="flex flex-row justify-between items-center">
-      <View>
-        <Text className="text-lg font-bold">{title}</Text>
-        <Text className="text-gray-600">{description}</Text>
+    <View className="relative">
+      <Image
+        source={{
+          uri: "https://www.gstatic.com/classroom/themes/img_reachout.jpg",
+        }}
+        className="absolute top-0 left-0 right-0 w-full h-full rounded-t-xl"
+      />
+      <View className="z-10 px-4 py-6">
+        <Text className="text-4xl font-rubik-bold mb-2 text-white">
+          {title}
+        </Text>
+
+        <Text className="text-lg mb-1 text-white">Time: {time}</Text>
+        <Text className="text-lg text-white">{days}</Text>
       </View>
-      <View>
-        <Image source={icons.rightArrow} className="size-6" />
-      </View>
+    </View>
+    <View className="p-3 flex flex-row justify-between items-center">
+      <Text>View Class</Text>
+      <Image source={icons.rightArrow} className="size-5" />
     </View>
   </TouchableOpacity>
 );
@@ -173,16 +182,22 @@ const Classes = () => {
     try {
       const fileUrl = storage.getFileDownload(config.modulesBucket, fileId);
       const downloadResumable = FileSystem.createDownloadResumable(
-        fileUrl.href, // Ensure the URL is a string
+        fileUrl.href,
         FileSystem.documentDirectory + fileName
       );
 
       const { uri } = await downloadResumable.downloadAsync();
       await Sharing.shareAsync(uri);
+      Alert.alert("Success", "File downloaded successfully");
     } catch (error) {
-      console.error(error);
+      console.error("Download error:", error);
+      Alert.alert(
+        "Download Failed",
+        "There was an error downloading the file. Please try again."
+      );
+    } finally {
+      setDownloading(false);
     }
-    setDownloading(false);
   };
 
   const handleDropClass = async () => {
@@ -277,16 +292,179 @@ const Classes = () => {
   };
 
   const handleDeleteModule = async (moduleId) => {
-    // Implement the logic to delete a module
+    try {
+      // Show confirmation dialog
+      Alert.alert(
+        "Delete Module",
+        "Are you sure you want to delete this module?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              setLoading(true);
+              try {
+                // Step 1: Delete file from storage
+                await storage.deleteFile(config.modulesBucket, moduleId);
+
+                // Step 2: Update class document to remove module ID
+                const updatedModules = enrolledClass.modules.filter(
+                  (id) => id !== moduleId
+                );
+                await database.updateDocument(
+                  config.db,
+                  config.classesCollectionId,
+                  enrolledClass.$id,
+                  { modules: updatedModules }
+                );
+
+                // Step 3: Refresh modules list
+                fetchModules(updatedModules);
+                Alert.alert("Success", "Module deleted successfully");
+              } catch (error) {
+                console.error("Delete error:", error);
+                Alert.alert(
+                  "Delete Failed",
+                  "There was an error deleting the module. Please try again."
+                );
+              } finally {
+                setLoading(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("Delete module error:", error);
+      Alert.alert(
+        "Error",
+        "There was an error processing your request. Please try again."
+      );
+    }
   };
 
   const handleEditClass = async (classItem) => {
-    // Implement the logic to edit a class
+    try {
+      // Set up the class data for editing
+      setNewClass({
+        name: classItem.name,
+        description: classItem.description,
+        days: classItem.days,
+        time: classItem.time,
+        faculty: classItem.faculty,
+      });
+
+      // Show the modal for editing
+      setIsAddClassModalVisible(true);
+
+      // Update the class document
+      const updatedClass = await database.updateDocument(
+        config.db,
+        config.classesCollectionId,
+        classItem.$id,
+        {
+          name: newClass.name,
+          description: newClass.description,
+          days: newClass.days,
+          time: newClass.time,
+          faculty: newClass.faculty,
+        }
+      );
+
+      // Update the local state
+      setEnrolledClass(updatedClass);
+
+      // Close the modal
+      setIsAddClassModalVisible(false);
+
+      Alert.alert("Success", "Class updated successfully");
+    } catch (error) {
+      console.error("Edit class error:", error);
+      Alert.alert("Error", "Failed to update class. Please try again.");
+    }
   };
 
   const handleDeleteClass = async (classId) => {
-    // Implement the logic to delete a class
+    Alert.alert(
+      "Delete Class",
+      "Are you sure you want to delete this class? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              // Delete all modules associated with the class
+              if (enrolledClass.modules.length > 0) {
+                await Promise.all(
+                  enrolledClass.modules.map(async (moduleId) => {
+                    try {
+                      await storage.deleteFile(config.modulesBucket, moduleId);
+                    } catch (error) {
+                      console.error("Error deleting module:", error);
+                    }
+                  })
+                );
+              }
+
+              // Delete the class document
+              await database.deleteDocument(
+                config.db,
+                config.classesCollectionId,
+                classId
+              );
+
+              // Update local state
+              setEnrolledClass(null);
+              setModules([]);
+
+              // Refresh the classes list
+              checkEnrollment();
+
+              Alert.alert("Success", "Class deleted successfully");
+            } catch (error) {
+              console.error("Delete class error:", error);
+              Alert.alert("Error", "Failed to delete class. Please try again.");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
+
+  // Modify the Add Class Modal to handle both adding and editing
+  const handleAddOrUpdateClass = async () => {
+    setLoading(true);
+    try {
+      if (enrolledClass) {
+        // Update existing class
+        await handleEditClass(enrolledClass);
+      } else {
+        // Create new class
+        await handleAddClass();
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Failed to save class. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the modal title and button text based on whether we're editing or adding
+  const modalTitle = enrolledClass ? "Edit Class" : "Add New Class";
+  const buttonText = enrolledClass ? "Update Class" : "Add Class";
 
   const handleAddClass = async () => {
     setLoading(true);
@@ -323,92 +501,114 @@ const Classes = () => {
     (role === "faculty" || role === "admin" || role === "student")
   ) {
     return (
-      <SafeAreaView className="flex h-full w-full bg-white relative">
-        {role !== "student" && (
-          <View className="pl-4">
-            <TouchableOpacity
-              onPress={() => setEnrolledClass(null)}
-              className="size-10 bg-gray-200 p-2 rounded-full"
-            >
-              <Image source={icons.backArrow} className="size-6" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View className="p-4">
-          <Image
-            source={{
-              uri: "https://www.gstatic.com/classroom/themes/img_reachout.jpg",
-            }}
-            className="w-full h-52 rounded-lg mb-4"
-          />
-          <Text className="text-2xl font-bold mb-2">{enrolledClass.name}</Text>
-          <Text className="text-base text-gray-600 mb-2">
-            {enrolledClass.description}
-          </Text>
-          <Text className="text-base mb-2">Time: {enrolledClass.time}</Text>
-          <Text className="text-base">Days: {enrolledClass.days}</Text>
-        </View>
-        <View className="px-4">
-          <View className="flex flex-row justify-between items-center mb-4">
-            <Text className="text-xl font-bold">Modules</Text>
-            {role === "faculty" && (
+      <SafeAreaView className="flex h-full w-full bg-white relative ">
+        <ScrollView>
+          {role !== "student" && (
+            <View className="pl-4">
               <TouchableOpacity
-                onPress={handleAddModule}
-                className="px-4 py-2 bg-blue-500 rounded-full"
+                onPress={() => setEnrolledClass(null)}
+                className="size-10 bg-gray-200 p-2 rounded-full"
               >
-                <Text className="text-white text-center">Add Module</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <FlatList
-            data={modules}
-            keyExtractor={(item) => item.$id}
-            renderItem={({ item }) => (
-              <View className="bg-white pl-2 py-4 pr-4 rounded-2xl border border-slate-200 mb-2">
-                <View className="flex flex-row gap-2 items-center">
-                  <Image source={icons.file} className="size-14" />
-                  <View>
-                    <Text className="font-bold text-wrap">{item.name}</Text>
-                    <Text className="text-black-100 text-sm">
-                      Tap to download
-                    </Text>
-                  </View>
-                  {downloading && (
-                    <ActivityIndicator size="small" color="#0000ff" />
-                  )}
-                </View>
-                {role === "faculty" && (
-                  <TouchableOpacity
-                    onPress={() => handleDeleteModule(item.$id)}
-                    className="mt-2 px-4 py-2 bg-red-500 rounded-full"
-                  >
-                    <Text className="text-white text-center">
-                      Delete Module
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          />
-
-          {role === "admin" && (
-            <View className="flex flex-row justify-between mt-4">
-              <TouchableOpacity
-                onPress={() => handleEditClass(enrolledClass)}
-                className="px-4 py-2 bg-green-500 rounded-full"
-              >
-                <Text className="text-white text-center">Edit Class</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleDeleteClass(enrolledClass.$id)}
-                className="px-4 py-2 bg-red-500 rounded-full"
-              >
-                <Text className="text-white text-center">Delete Class</Text>
+                <Image source={icons.backArrow} className="size-6" />
               </TouchableOpacity>
             </View>
           )}
-        </View>
+
+          <View className="p-4">
+            <View className="relative">
+              <Image
+                source={{
+                  uri: "https://www.gstatic.com/classroom/themes/img_reachout.jpg",
+                }}
+                className="absolute top-0 left-0 right-0 w-full h-52 rounded-lg"
+              />
+              <View className="z-10 px-4 py-6">
+                <Text className="text-4xl font-rubik-bold mb-2 text-white">
+                  {enrolledClass.name}
+                </Text>
+
+                <Text className="text-lg mb-1 text-white">
+                  Time: {enrolledClass.time}
+                </Text>
+                <Text className="text-lg text-white">{enrolledClass.days}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View className="px-4 mt-[40px]">
+            <Text className="text-lg text-black-200">
+              {enrolledClass.description}
+            </Text>
+            <View className="flex flex-row justify-between items-center mb-4 mt-[40px]">
+              <Text className="text-xl font-rubik-bold">Modules</Text>
+              {role === "faculty" && (
+                <TouchableOpacity
+                  onPress={handleAddModule}
+                  className="px-4 py-2 bg-blue-500 rounded-full"
+                >
+                  <Text className="text-white text-center font-rubik">
+                    Add Module
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <FlatList
+              data={modules}
+              keyExtractor={(item) => item.$id}
+              renderItem={({ item }) => (
+                <View className="bg-white pl-2 py-4 pr-4 rounded-2xl border border-slate-200 mb-2">
+                  <TouchableOpacity
+                    onPress={() => handleDownload(item.$id, item.name)}
+                    className="flex flex-row gap-2 items-center"
+                  >
+                    <Image source={icons.file} className="size-14" />
+                    <View className="flex-1">
+                      <Text className="font-bold text-wrap font-rubik-medium">
+                        {item.name}
+                      </Text>
+                      <Text className="text-gray-500 text-sm">
+                        Tap to download
+                      </Text>
+                    </View>
+                    {downloading && (
+                      <ActivityIndicator size="small" color="#0000ff" />
+                    )}
+                  </TouchableOpacity>
+
+                  {role === "faculty" && (
+                    <View className="flex flex-row justify-end gap-2 mt-2">
+                      <TouchableOpacity
+                        onPress={() => handleDeleteModule(item.$id)}
+                        className="px-4 py-2 bg-red-500 rounded-full"
+                      >
+                        <Text className="text-white text-center font-rubik">
+                          Delete
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+            />
+
+            {role === "admin" && (
+              <View className="flex flex-row justify-between mt-4">
+                <TouchableOpacity
+                  onPress={() => handleEditClass(enrolledClass)}
+                  className="px-4 py-2 bg-green-500 rounded-full"
+                >
+                  <Text className="text-white text-center">Edit Class</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeleteClass(enrolledClass.$id)}
+                  className="px-4 py-2 bg-red-500 rounded-full"
+                >
+                  <Text className="text-white text-center">Delete Class</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -434,23 +634,38 @@ const Classes = () => {
             key={item.$id}
           />
         )}
-        contentContainerStyle={{ padding: 16 }}
         stickyHeaderIndices={[0]}
         ListHeaderComponent={
-          <View className="px-2 py-5 flex flex-row justify-between items-center bg-white">
-            <Text className={"text-xl font-rubik-bold text-black-300"}>
-              Available Classes
-            </Text>
-            {role === "admin" && (
-              <TouchableOpacity
-                onPress={() => setIsAddClassModalVisible(true)}
-                className="px-4 py-2 bg-blue-500 rounded-full"
-              >
-                <Text className="text-white text-center">Add Class</Text>
-              </TouchableOpacity>
-            )}
+          <View className="px-4 py-6 bg-white border-b border-gray-200">
+            <View className="flex-row justify-between items-center">
+              <View>
+                <Text className="text-3xl font-bold text-gray-800">
+                  Classes
+                </Text>
+                <Text className="text-gray-500 mt-1">
+                  List of available classes
+                </Text>
+              </View>
+              {role === "admin" && (
+                <TouchableOpacity
+                  onPress={() => setIsAddClassModalVisible(true)}
+                  className="bg-blue-500 px-4 py-2 rounded-lg"
+                >
+                  <Text className="text-white font-semibold">Add</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         }
+        ListEmptyComponent={() => (
+          <View className="flex-1 justify-center items-center py-20">
+            <Ionicons name="book-outline" size={48} color="#9ca3af" />
+            <Text className="text-gray-400 mt-4 text-lg">No classes found</Text>
+            <Text className="text-gray-400 text-sm">
+              Add a class to get started
+            </Text>
+          </View>
+        )}
       />
 
       {role === "student" && (
@@ -506,7 +721,7 @@ const Classes = () => {
         <Modal visible={isAddClassModalVisible} transparent={true}>
           <View className="flex-1 justify-center items-center bg-black/80">
             <View className="bg-white p-6 rounded-2xl w-full max-w-96">
-              <Text className="text-2xl font-bold mb-4">Add New Class</Text>
+              <Text className="text-2xl font-bold mb-4">{modalTitle}</Text>
               <TextInput
                 placeholder="Class Name"
                 value={newClass.name}
@@ -562,7 +777,7 @@ const Classes = () => {
                   <Text className="text-center">Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={handleAddClass}
+                  onPress={handleAddOrUpdateClass}
                   className="px-4 rounded-full bg-primary-300 py-2"
                   disabled={loading}
                 >
@@ -570,7 +785,7 @@ const Classes = () => {
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <Text className="text-center font-rubik-medium text-white ">
-                      Add Class
+                      {buttonText}
                     </Text>
                   )}
                 </TouchableOpacity>
