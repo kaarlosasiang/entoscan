@@ -20,10 +20,18 @@ import { useAuth } from "@/contexts/AuthContext";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
-import { ID } from "react-native-appwrite";
+import { ID, Query } from "react-native-appwrite";
 import { Ionicons } from "@expo/vector-icons";
 
-const ClassCard = ({ title, description, image, days, time, onPress }) => (
+const ClassCard = ({
+  title,
+  description,
+  image,
+  code,
+  days,
+  time,
+  onPress,
+}) => (
   <TouchableOpacity
     className="bg-white m-2 rounded-2xl border border-slate-200 mx-5"
     onPress={onPress}
@@ -40,6 +48,7 @@ const ClassCard = ({ title, description, image, days, time, onPress }) => (
           {title}
         </Text>
 
+        <Text className="text-lg mb-1 text-white">Code: {code}</Text>
         <Text className="text-lg mb-1 text-white">Time: {time}</Text>
         <Text className="text-lg text-white">{days}</Text>
       </View>
@@ -60,9 +69,14 @@ const Classes = () => {
   const [modules, setModules] = useState([]);
   const [downloading, setDownloading] = useState(false);
   const [isAddClassModalVisible, setIsAddClassModalVisible] = useState(false);
+  const [isEnrollClassModalVisible, setIsEnrollClassModalVisible] =
+    useState(false);
+  const [classCode, setClassCode] = useState("");
+
   const [newClass, setNewClass] = useState({
     name: "",
     description: "",
+    code: "",
     days: "",
     time: "",
     faculty: "",
@@ -71,6 +85,22 @@ const Classes = () => {
   const { user, role } = useAuth();
 
   const navigation = useNavigation();
+
+  const [assignments, setAssignments] = useState([]);
+  const [isAssignmentModalVisible, setIsAssignmentModalVisible] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [submission, setSubmission] = useState("");
+
+  const [isAddAssignmentModalVisible, setIsAddAssignmentModalVisible] = useState(false);
+  const [newAssignment, setNewAssignment] = useState({
+    title: "",
+    description: "",
+    classId: "",
+  });
+
+  // Add these to your existing state declarations
+  const [isEditAssignmentModalVisible, setIsEditAssignmentModalVisible] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState(null);
 
   useEffect(() => {
     checkEnrollment();
@@ -83,6 +113,7 @@ const Classes = () => {
         config.db,
         config.classesCollectionId
       );
+      console.log(response);
 
       const enrolledClass = response.documents.find((classItem) =>
         classItem.students.includes(user.$id)
@@ -127,10 +158,8 @@ const Classes = () => {
         config.facultiesCollectionId
       );
 
-      // const faculty = response.documents.filter((user) =>
-      //   user.labels.includes("faculty")
-      // );
       setFacultyList(response.documents);
+      console.log("Faculties:", response.documents);
     } catch (error) {
       console.error("Fetch Faculty", error);
     }
@@ -141,40 +170,63 @@ const Classes = () => {
     if (role === "student") {
       setIsModalVisible(true);
     } else {
+      console.log(classItem);
+
       setEnrolledClass(classItem);
       fetchModules(classItem.modules);
     }
   };
 
-  const handleEnrollPress = async (item) => {
+  const handleEnrollPress = async () => {
+    if (!classCode.trim()) {
+      Alert.alert("Error", "Please enter a class code");
+      return;
+    }
+
     setLoading(true);
     try {
-      const document = await database.getDocument(
+      // Find class with matching code
+      const response = await database.listDocuments(
         config.db,
         config.classesCollectionId,
-        item.$id
+        [Query.equal("code", classCode)]
       );
 
-      if (!document.students.includes(user.$id)) {
-        const updatedStudents = [...document.students, user.$id];
-
-        await database.updateDocument(
-          config.db,
-          config.classesCollectionId,
-          item.$id,
-          { students: updatedStudents }
-        );
-
-        setEnrolledClass(item);
-        fetchModules(item.modules);
-      } else {
-        Alert.alert("Error", "You are already enrolled in this class.");
+      if (response.documents.length === 0) {
+        Alert.alert("Error", "Invalid class code");
+        return;
       }
+
+      const classItem = response.documents[0];
+
+      // Check if already enrolled
+      if (classItem.students.includes(user.$id)) {
+        Alert.alert("Error", "You are already enrolled in this class");
+        return;
+      }
+
+      // Add student to class
+      const updatedStudents = [...classItem.students, user.$id];
+      await database.updateDocument(
+        config.db,
+        config.classesCollectionId,
+        classItem.$id,
+        { students: updatedStudents }
+      );
+
+      // Update local state
+      setEnrolledClass(classItem);
+      fetchModules(classItem.modules);
+
+      Alert.alert("Success", "Successfully enrolled in class");
+      setClassCode("");
+      setIsEnrollClassModalVisible(false);
     } catch (error) {
-      console.error(error);
+      console.error("Enroll error:", error);
+      Alert.alert("Error", "Failed to enroll in class. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-    setIsModalVisible(false);
   };
 
   const handleDownload = async (fileId, fileName) => {
@@ -203,16 +255,19 @@ const Classes = () => {
   const handleDropClass = async () => {
     setLoading(true);
     try {
+      // Get the current class document
       const document = await database.getDocument(
         config.db,
         config.classesCollectionId,
         enrolledClass.$id
       );
 
+      // Remove the current user from the students array
       const updatedStudents = document.students.filter(
         (studentId) => studentId !== user.$id
       );
 
+      // Update the class document with the new students array
       await database.updateDocument(
         config.db,
         config.classesCollectionId,
@@ -220,13 +275,21 @@ const Classes = () => {
         { students: updatedStudents }
       );
 
+      // Clear local state
       setEnrolledClass(null);
       setModules([]);
+
+      // Add the class back to available classes
       setClasses((prevClasses) => [...prevClasses, document]);
+
+      // Show success message
+      Alert.alert("Success", "You have successfully dropped the class");
     } catch (error) {
-      console.error(error);
+      console.error("Drop class error:", error);
+      Alert.alert("Error", "Failed to drop class. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleAddModule = async () => {
@@ -474,6 +537,9 @@ const Classes = () => {
         students: [],
         modules: [],
       };
+
+      console.log(newClassDocument);
+
       await database.createDocument(
         config.db,
         config.classesCollectionId,
@@ -494,6 +560,124 @@ const Classes = () => {
       console.error(error);
     }
     setLoading(false);
+  };
+
+  const fetchAssignments = async (classId) => {
+    try {
+      const response = await database.listDocuments(
+        config.db,
+        config.assignmentsCollectionId,
+        [Query.equal("classId", classId)]
+      );
+      console.log("Assignments:", response.documents);
+      
+      setAssignments(response.documents);
+    } catch (error) {
+      console.error("Fetch assignments error:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (enrolledClass) {
+      fetchAssignments(enrolledClass.$id);
+    }
+  }, [enrolledClass]);
+
+  // Add this with your other handler functions
+  const handleAddAssignment = async () => {
+    try {
+      if (!newAssignment.title.trim() || !newAssignment.description.trim()) {
+        Alert.alert("Error", "Please fill in all fields");
+        return;
+      }
+
+      const assignmentData = {
+        title: newAssignment.title,
+        description: newAssignment.description,
+        classId: enrolledClass.$id,
+        submissions: [],
+      };
+
+      await database.createDocument(
+        config.db,
+        config.assignmentsCollectionId,
+        ID.unique(),
+        assignmentData
+      );
+
+      // Refresh assignments list
+      fetchAssignments(enrolledClass.$id);
+      setIsAddAssignmentModalVisible(false);
+      setNewAssignment({
+        title: "",
+        description: "",
+        classId: "",
+      });
+      Alert.alert("Success", "Assignment created successfully");
+    } catch (error) {
+      console.error("Add assignment error:", error);
+      Alert.alert("Error", "Failed to create assignment");
+    }
+  };
+
+  // Add these with your other handler functions
+  const handleEditAssignment = async () => {
+    try {
+      if (!editingAssignment.title.trim() || !editingAssignment.description.trim()) {
+        Alert.alert("Error", "Please fill in all fields");
+        return;
+      }
+
+      await database.updateDocument(
+        config.db,
+        config.assignmentsCollectionId,
+        editingAssignment.$id,
+        {
+          title: editingAssignment.title,
+          description: editingAssignment.description
+        }
+      );
+
+      fetchAssignments(enrolledClass.$id);
+      setIsEditAssignmentModalVisible(false);
+      setEditingAssignment(null);
+      Alert.alert("Success", "Assignment updated successfully");
+    } catch (error) {
+      console.error("Edit assignment error:", error);
+      Alert.alert("Error", "Failed to update assignment");
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId) => {
+    Alert.alert(
+      "Delete Assignment",
+      "Are you sure you want to delete this assignment? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await database.deleteDocument(
+                config.db,
+                config.assignmentsCollectionId,
+                assignmentId
+              );
+              
+              fetchAssignments(enrolledClass.$id);
+              Alert.alert("Success", "Assignment deleted successfully");
+            } catch (error) {
+              console.error("Delete assignment error:", error);
+              Alert.alert("Error", "Failed to delete assignment");
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (
@@ -540,7 +724,7 @@ const Classes = () => {
               {enrolledClass.description}
             </Text>
             <View className="flex flex-row justify-between items-center mb-4 mt-[40px]">
-              <Text className="text-xl font-rubik-bold">Modules</Text>
+              <Text className="text-xl font-rubik-bold">Module & Assignments</Text>
               {role === "faculty" && (
                 <TouchableOpacity
                   onPress={handleAddModule}
@@ -591,6 +775,130 @@ const Classes = () => {
               )}
             />
 
+            {/* Add this after the modules FlatList */}
+            <View className="mt-8">
+              <View className="flex flex-row justify-between items-center mb-4">
+                <Text className="text-xl font-rubik-bold">Assignments</Text>
+                {role === "faculty" && (
+                  <TouchableOpacity
+                    onPress={() => setIsAddAssignmentModalVisible(true)}
+                    className="px-4 py-2 bg-blue-500 rounded-full"
+                  >
+                    <Text className="text-white text-center font-rubik">
+                      Add Assignment
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              <FlatList
+                data={assignments}
+                keyExtractor={(item) => item.$id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity 
+                    onPress={() => {
+                      setSelectedAssignment(item);
+                      setIsAssignmentModalVisible(true);
+                    }}
+                    className="bg-white p-4 rounded-2xl border border-slate-200 mb-2"
+                  >
+                    <View className="flex-row justify-between items-start">
+                      <View className="flex-1">
+                        <Text className="font-bold text-lg font-rubik-medium">
+                          {item.title}
+                        </Text>
+                        <Text className="text-gray-600 mt-1">
+                          {item.description}
+                        </Text>
+                        {item.fileId && (
+                          <TouchableOpacity 
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDownload(item.fileId, 'assignment.pdf');
+                            }}
+                            className="mt-2"
+                          >
+                            <Text className="text-blue-500">Download Attachment</Text>
+                          </TouchableOpacity>
+                        )}
+                        {/* Show different status based on role */}
+                        {role === "faculty" ? (
+                          <Text className="text-gray-500 mt-2">
+                            Submissions: {item.submissions?.length || 0}
+                          </Text>
+                        ) : (
+                          <Text className="text-gray-500 mt-2">
+                            Status: {item.submissions?.find(s => {
+                              const submission = JSON.parse(s);
+                              return submission.userId === user.$id;
+                            }) ? 'Submitted' : 'Not Submitted'}
+                          </Text>
+                        )}
+                      </View>
+                      
+                      {role === "faculty" && (
+                        <View className="flex-row gap-2">
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setEditingAssignment(item);
+                              setIsEditAssignmentModalVisible(true);
+                            }}
+                            className="p-2 bg-gray-100 rounded-full"
+                          >
+                            <Ionicons name="create-outline" size={20} color="#374151" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAssignment(item.$id);
+                            }}
+                            className="p-2 bg-red-100 rounded-full"
+                          >
+                            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={() => (
+                  <View className="py-8 items-center">
+                    <Text className="text-gray-500">No assignments yet</Text>
+                  </View>
+                )}
+              />
+            </View>
+
+            {role === "student" && (
+              <View className="mt-8">
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      "Drop Class",
+                      "Are you sure you want to drop this class?",
+                      [
+                        {
+                          text: "Cancel",
+                          style: "cancel",
+                        },
+                        {
+                          text: "Drop",
+                          style: "destructive",
+                          onPress: handleDropClass,
+                        },
+                      ]
+                    );
+                  }}
+                  className="bg-red-500 px-4 py-2 rounded-full"
+                >
+                  <Text className="text-white text-center font-rubik">
+                    Drop Class
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {role === "admin" && (
               <View className="flex flex-row justify-between mt-4">
                 <TouchableOpacity
@@ -609,33 +917,226 @@ const Classes = () => {
             )}
           </View>
         </ScrollView>
+        <Modal visible={isAssignmentModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96 mx-4">
+              {selectedAssignment && (
+                <>
+                  <View className="flex-row justify-between items-center mb-4">
+                    <Text className="text-2xl font-bold">{selectedAssignment.title}</Text>
+                    <TouchableOpacity onPress={() => setIsAssignmentModalVisible(false)}>
+                      <Ionicons name="close" size={24} color="#374151" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text className="text-gray-600 mb-4">{selectedAssignment.description}</Text>
+
+                  {role === "student" && (
+                    <>
+                      <Text className="font-bold mb-2">Your Submission:</Text>
+                      {selectedAssignment.submissions?.find(s => {
+                        const submission = JSON.parse(s);
+                        return submission.userId === user.$id;
+                      }) ? (
+                        <ScrollView className="border border-gray-300 p-4 rounded-lg mb-4 max-h-[400px]">
+                          <Text className="text-gray-600">
+                            {JSON.parse(selectedAssignment.submissions.find(s => {
+                              const submission = JSON.parse(s);
+                              return submission.userId === user.$id;
+                            })).text}
+                          </Text>
+                        </ScrollView>
+                      ) : (
+                        <TextInput
+                          multiline
+                          numberOfLines={8}
+                          placeholder="Enter your answer here. Maximum 5000 characters."
+                          value={submission}
+                          onChangeText={setSubmission}
+                          className="border border-gray-300 p-4 rounded-lg mb-4"
+                          textAlignVertical="top"
+                          style={{
+                            minHeight: 200,
+                            maxHeight: 400,
+                          }}
+                        />
+                      )}
+
+                      {!selectedAssignment.submissions?.find(s => {
+                        const submission = JSON.parse(s);
+                        return submission.userId === user.$id;
+                      }) && (
+                        <TouchableOpacity
+                          onPress={async () => {
+                            try {
+                              // Validate submission length
+                              if (!submission.trim()) {
+                                Alert.alert("Error", "Please enter your answer before submitting");
+                                return;
+                              }
+                              
+                              if (submission.length > 5000) {
+                                Alert.alert("Error", "Your answer exceeds the maximum length of 5000 characters");
+                                return;
+                              }
+
+                              // Convert submission object to string format
+                              const submissionString = JSON.stringify({
+                                name: user.name,
+                                userId: user.$id,
+                                text: submission
+                              });
+
+                              const updatedSubmissions = [
+                                ...(selectedAssignment.submissions || []),
+                                submissionString
+                              ];
+                              
+                              await database.updateDocument(
+                                config.db,
+                                config.assignmentsCollectionId,
+                                selectedAssignment.$id,
+                                { submissions: updatedSubmissions }
+                              );
+                              
+                              fetchAssignments(enrolledClass.$id);
+                              setIsAssignmentModalVisible(false);
+                              setSubmission("");
+                              Alert.alert("Success", "Assignment submitted successfully");
+                            } catch (error) {
+                              console.error("Submit error:", error);
+                              Alert.alert("Error", "Failed to submit assignment");
+                            }
+                          }}
+                          className="bg-blue-500 px-4 py-2 rounded-full"
+                        >
+                          <Text className="text-white text-center font-rubik">Submit</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
+
+                  {role === "faculty" && (
+                    <>
+                      <Text className="font-bold mb-2">Submissions:</Text>
+                      {selectedAssignment.submissions?.length > 0 ? (
+                        <FlatList
+                          data={selectedAssignment.submissions}
+                          keyExtractor={(item, index) => index.toString()}
+                          renderItem={({ item }) => {
+                            const submission = JSON.parse(item);
+                            return (
+                              <View className="border-b border-gray-200 py-2">
+                                <Text className="font-bold">Student: {submission.name}</Text>
+                                <Text className="text-gray-500 text-sm">ID: {submission.userId}</Text>
+                                <Text className="text-gray-600 mt-1">{submission.text}</Text>
+                              </View>
+                            );
+                          }}
+                        />
+                      ) : (
+                        <Text className="text-gray-500">No submissions yet</Text>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={isAddAssignmentModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96 mx-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-2xl font-bold">Add Assignment</Text>
+                <TouchableOpacity onPress={() => setIsAddAssignmentModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#374151" />
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                placeholder="Assignment Title"
+                value={newAssignment.title}
+                onChangeText={(text) => setNewAssignment({ ...newAssignment, title: text })}
+                className="border border-gray-300 p-3 rounded-lg mb-4"
+              />
+
+              <TextInput
+                placeholder="Assignment Description"
+                value={newAssignment.description}
+                onChangeText={(text) => setNewAssignment({ ...newAssignment, description: text })}
+                className="border border-gray-300 p-3 rounded-lg mb-4"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+
+              <TouchableOpacity
+                onPress={handleAddAssignment}
+                className="bg-blue-500 px-4 py-2 rounded-full"
+              >
+                <Text className="text-white text-center font-rubik">Create Assignment</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={isEditAssignmentModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96 mx-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-2xl font-bold">Edit Assignment</Text>
+                <TouchableOpacity onPress={() => {
+                  setIsEditAssignmentModalVisible(false);
+                  setEditingAssignment(null);
+                }}>
+                  <Ionicons name="close" size={24} color="#374151" />
+                </TouchableOpacity>
+              </View>
+
+              {editingAssignment && (
+                <>
+                  <TextInput
+                    placeholder="Assignment Title"
+                    value={editingAssignment.title}
+                    onChangeText={(text) => setEditingAssignment({
+                      ...editingAssignment,
+                      title: text
+                    })}
+                    className="border border-gray-300 p-3 rounded-lg mb-4"
+                  />
+
+                  <TextInput
+                    placeholder="Assignment Description"
+                    value={editingAssignment.description}
+                    onChangeText={(text) => setEditingAssignment({
+                      ...editingAssignment,
+                      description: text
+                    })}
+                    className="border border-gray-300 p-3 rounded-lg mb-4"
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+
+                  <TouchableOpacity
+                    onPress={handleEditAssignment}
+                    className="bg-blue-500 px-4 py-2 rounded-full"
+                  >
+                    <Text className="text-white text-center font-rubik">Update Assignment</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView className="flex h-full w-full bg-white relative">
-      <FlatList
-        data={classes}
-        keyExtractor={(item) => item.$id}
-        renderItem={({ item }) => (
-          <ClassCard
-            title={item.name}
-            description={item.description}
-            image={"https://placehold.co/400x100/000000/svg"} // Placeholder image URL
-            days={item.days}
-            time={item.time}
-            onPress={() =>
-              handleClassPress({
-                ...item,
-                image: "https://placehold.co/400x100/000000/svg",
-              })
-            } // Placeholder image URL
-            key={item.$id}
-          />
-        )}
-        stickyHeaderIndices={[0]}
-        ListHeaderComponent={
+      {role == "student" && (
+        <>
           <View className="px-4 py-6 bg-white border-b border-gray-200">
             <View className="flex-row justify-between items-center">
               <View>
@@ -646,27 +1147,90 @@ const Classes = () => {
                   List of available classes
                 </Text>
               </View>
-              {role === "admin" && (
-                <TouchableOpacity
-                  onPress={() => setIsAddClassModalVisible(true)}
-                  className="bg-blue-500 px-4 py-2 rounded-lg"
-                >
-                  <Text className="text-white font-semibold">Add</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                onPress={() => setIsEnrollClassModalVisible(true)}
+                className="bg-blue-500 px-4 py-2 rounded-lg"
+              >
+                <Text className="text-white font-semibold">Enroll Class</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        }
-        ListEmptyComponent={() => (
           <View className="flex-1 justify-center items-center py-20">
             <Ionicons name="book-outline" size={48} color="#9ca3af" />
             <Text className="text-gray-400 mt-4 text-lg">No classes found</Text>
             <Text className="text-gray-400 text-sm">
-              Add a class to get started
+              Enroll a class to get started
             </Text>
           </View>
-        )}
-      />
+        </>
+      )}
+      {role !== "student" && (
+        <FlatList
+          data={classes}
+          keyExtractor={(item) => item.$id}
+          renderItem={({ item }) => (
+            <ClassCard
+              title={item.name}
+              description={item.description}
+              image={"https://placehold.co/400x100/000000/svg"} // Placeholder image URL
+              days={item.days}
+              code={item.code}
+              time={item.time}
+              onPress={() =>
+                handleClassPress({
+                  ...item,
+                  image: "https://placehold.co/400x100/000000/svg",
+                })
+              } // Placeholder image URL
+              key={item.$id}
+            />
+          )}
+          stickyHeaderIndices={[0]}
+          ListHeaderComponent={
+            <View className="px-4 py-6 bg-white border-b border-gray-200">
+              <View className="flex-row justify-between items-center">
+                <View>
+                  <Text className="text-3xl font-bold text-gray-800">
+                    Classes
+                  </Text>
+                  <Text className="text-gray-500 mt-1">
+                    List of available classes
+                  </Text>
+                </View>
+                {role === "admin" && (
+                  <TouchableOpacity
+                    onPress={() => setIsAddClassModalVisible(true)}
+                    className="bg-blue-500 px-4 py-2 rounded-lg"
+                  >
+                    <Text className="text-white font-semibold">Add</Text>
+                  </TouchableOpacity>
+                )}
+                {role === "student" && (
+                  <TouchableOpacity
+                    onPress={() => setIsEnrollClassModalVisible(true)}
+                    className="bg-blue-500 px-4 py-2 rounded-lg"
+                  >
+                    <Text className="text-white font-semibold">
+                      Enroll Class
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          }
+          ListEmptyComponent={() => (
+            <View className="flex-1 justify-center items-center py-20">
+              <Ionicons name="book-outline" size={48} color="#9ca3af" />
+              <Text className="text-gray-400 mt-4 text-lg">
+                No classes found
+              </Text>
+              <Text className="text-gray-400 text-sm">
+                Add a class to get started
+              </Text>
+            </View>
+          )}
+        />
+      )}
 
       {role === "student" && (
         <Modal visible={isModalVisible} transparent={true}>
@@ -688,6 +1252,7 @@ const Classes = () => {
                     Time: {selectedClass.time}
                   </Text>
                   <Text className="text-base">Days: {selectedClass.days}</Text>
+                  <Text className="text-base">Days: {selectedClass.code}</Text>
 
                   <View className="flex flex-row justify-between items-center mt-4">
                     <TouchableOpacity
@@ -739,6 +1304,14 @@ const Classes = () => {
                 className="border border-gray-300 p-2 rounded mb-4"
               />
               <TextInput
+                placeholder="code"
+                value={newClass.code}
+                onChangeText={(text) =>
+                  setNewClass({ ...newClass, code: text })
+                }
+                className="border border-gray-300 p-2 rounded mb-4"
+              />
+              <TextInput
                 placeholder="Days (e.g. MWF)"
                 value={newClass.days}
                 onChangeText={(text) =>
@@ -756,16 +1329,17 @@ const Classes = () => {
               />
               <Picker
                 selectedValue={newClass.faculty}
-                onValueChange={(itemValue) =>
-                  setNewClass({ ...newClass, faculty: itemValue })
-                }
+                onValueChange={(itemValue) => {
+                  console.log(itemValue);
+                  setNewClass({ ...newClass, faculty: itemValue });
+                }}
                 className="border border-gray-300 p-2 rounded mb-4"
               >
                 {facultyList.map((faculty) => (
                   <Picker.Item
                     key={faculty.$id}
                     label={faculty.name}
-                    value={faculty.$id}
+                    value={faculty.user_id}
                   />
                 ))}
               </Picker>
@@ -786,6 +1360,53 @@ const Classes = () => {
                   ) : (
                     <Text className="text-center font-rubik-medium text-white ">
                       {buttonText}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {role === "student" && (
+        <Modal visible={isEnrollClassModalVisible} transparent={true}>
+          <View className="flex-1 justify-center items-center bg-black/80">
+            <View className="bg-white p-6 rounded-2xl w-full max-w-96 mx-4">
+              <Text className="text-2xl font-bold mb-4">Enroll in Class</Text>
+              <Text className="text-gray-600 mb-4">
+                Enter the class code provided by your instructor to enroll.
+              </Text>
+
+              <TextInput
+                placeholder="Enter class code"
+                value={classCode}
+                onChangeText={setClassCode}
+                className="border border-gray-300 p-3 rounded-lg mb-4"
+                autoCapitalize="none"
+              />
+
+              <View className="flex flex-row justify-between items-center mt-4">
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsEnrollClassModalVisible(false);
+                    setClassCode("");
+                  }}
+                  className="rounded-full"
+                >
+                  <Text className="text-center text-gray-600">Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleEnrollPress}
+                  className="px-6 py-2 rounded-full bg-blue-500"
+                  disabled={loading || !classCode.trim()}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-center font-rubik-medium text-white">
+                      Enroll
                     </Text>
                   )}
                 </TouchableOpacity>

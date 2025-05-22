@@ -68,21 +68,21 @@ const Faculties = () => {
       );
       console.log("User created:", newUser);
 
-      // // Create faculty document with user info
-      // const newFaculty = await database.createDocument(
-      //   config.db,
-      //   config.facultiesCollectionId,
-      //   ID.unique(),
-      //   {
-      //     name: newFacultyName.trim(),
-      //     user_id: newUser.$id
-      //   }
-      // );
+      // Create faculty document with user info
+      const newFaculty = await database.createDocument(
+        config.db,
+        config.facultiesCollectionId,
+        ID.unique(),
+        {
+          name: newFacultyName.trim(),
+          user_id: newUser.$id
+        }
+      );
 
-      // setFaculties((prev) => [...prev, newFaculty as Faculty]);
-      // setNewFacultyName("");
-      // setEmail("");
-      // setPassword("");
+      setFaculties((prev) => [...prev, newFaculty as Faculty]);
+      setNewFacultyName("");
+      setEmail("");
+      setPassword("");
       setIsModalVisible(false);
       Alert.alert("Success", "Faculty account created successfully");
     } catch (error: any) {

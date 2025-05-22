@@ -131,14 +131,14 @@ const SignIn = () => {
           </TouchableOpacity>
 
           {/* Divider */}
-          <View className="flex-row items-center my-6">
+          {/* <View className="flex-row items-center my-6">
             <View className="flex-1 h-[1px] bg-gray-200" />
             <Text className="mx-4 text-gray-400">OR</Text>
             <View className="flex-1 h-[1px] bg-gray-200" />
-          </View>
+          </View> */}
 
           {/* Social Sign In */}
-          <Text className="text-center text-gray-500 mb-4">Sign in using</Text>
+          {/* <Text className="text-center text-gray-500 mb-4">Sign in using</Text>
           <View className="flex-row justify-center space-x-6">
             <TouchableOpacity className="p-2">
               <Image source={images.google} className="w-8 h-8" />
@@ -149,7 +149,7 @@ const SignIn = () => {
             <TouchableOpacity className="p-2">
               <Image source={images.apple} className="w-8 h-8" />
             </TouchableOpacity>
-          </View>
+          </View> */}
 
           {/* Sign Up Link */}
           <View className="flex-row justify-center mt-6">

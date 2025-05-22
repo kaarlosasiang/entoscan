@@ -91,12 +91,7 @@ const SignUp = () => {
 
     try {
       // Create user with basic info
-      const user = await account.create(
-        ID.unique(),
-        email,
-        password,
-        fullname
-      );
+      const user = await account.create(ID.unique(), email, password, fullname);
       console.log("User created:", user);
 
       // Login the user
@@ -106,24 +101,12 @@ const SignUp = () => {
       );
       console.log("User logged in:", responseSession);
 
-      // Create a team for the user to assign role
-      const team = await teams.create(
-        ID.unique(),
-        'students',
-        ['student']
-      );
-      console.log("Team created:", team);
-
-      // Add user to the team
-      await teams.createMembership(
-        team.$id,
-        user.$id,
-        ['student']
-      );
+      // Update user preferences with role
+      await account.updatePrefs({ role: "student" });
 
       setSession(responseSession);
       setUser(user);
-      setRole('student');
+      setRole("student");
       return user;
     } catch (error: any) {
       console.log(error.message);
@@ -232,7 +215,7 @@ const SignUp = () => {
           </TouchableOpacity>
 
           {/* Rest of the components remain the same */}
-          <View className="flex-row items-center my-6">
+          {/* <View className="flex-row items-center my-6">
             <View className="flex-1 h-[1px] bg-gray-200" />
             <Text className="mx-4 text-gray-400">OR</Text>
             <View className="flex-1 h-[1px] bg-gray-200" />
@@ -257,7 +240,7 @@ const SignUp = () => {
             <Text className="text-blue-500">
               Privacy Policy and Content Policies
             </Text>
-          </Text>
+          </Text> */}
 
           <View className="flex-row justify-center mt-6">
             <Text className="text-gray-500">Already have an account? </Text>

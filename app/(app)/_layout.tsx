@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Redirect, Tabs, useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { Tabs, useRouter, Slot } from "expo-router";
 import { Image, Text, View, ImageSourcePropType } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import icons from "@/constants/icons";
@@ -33,17 +33,32 @@ const TabIcon = ({
 );
 
 export default function AppLayout() {
-  const { session, role } = useAuth();
-  // console.log(role);
-  
+  const { session, user, role } = useAuth();
+  const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    if (!session) {
-      <Redirect href="/signin" />;
-    } else {
-      <Redirect href="/" />;
+    // Mark the layout as mounted
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // Ensure session and user are properly initialized before redirecting
+    if (isMounted) {
+      if (session === false) {
+        // No session, redirect to signin
+        router.replace("/signin");
+      } else if (session && !user) {
+        // Session exists but no user, redirect to signin
+        router.replace("/signin");
+      }
     }
-  }, [session]);
+  }, [session, user, isMounted]);
+
+  // Render the layout only after mounting
+  if (!isMounted) {
+    return null;
+  }
 
   return (
     <Tabs

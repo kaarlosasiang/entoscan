@@ -102,7 +102,7 @@ export default function Scanner() {
   const [features, setFeatures] = useState("");
   const [habitat, setHabitat] = useState("");
   const [confidenceLevel, setConfidenceLevel] = useState("");
-  const [flashMode, setFlashMode] = useState<FlashMode>("on");
+  const [flashMode, setFlashMode] = useState(false);
   const [zoom, setZoom] = useState(0);
   const [isValidInsect, setIsInvalidInsect] = useState(true);
 
@@ -171,11 +171,13 @@ export default function Scanner() {
       console.log(response.data);
 
       const { predicted_class, confidence } = response.data;
-      if (
-        predicted_class === "not an insect" ||
-        predicted_class === "non betocerini tribe"
-      )
-        setIsInvalidInsect(false);
+      console.log(predicted_class);
+      
+      // if (
+      //   predicted_class === "not an insect" ||
+      //   predicted_class === "non betocerini tribe" || predicted_class === "please try again"
+      // )
+      //   setIsInvalidInsect(false);
 
       // Set predefined name and description based on classification
       const insectInfo = insectData[predicted_class];
@@ -186,7 +188,6 @@ export default function Scanner() {
         setHabitat(insectInfo.habitat);
       } else {
         setInsectName(predicted_class);
-        setDescription(`Confidence: ${(confidence * 100).toFixed(2)}%`);
       }
 
       setConfidenceLevel(`Confidence: ${(confidence * 100).toFixed(2)}%`);
@@ -299,6 +300,7 @@ export default function Scanner() {
       <CameraView
         ref={cameraRef}
         style={{ flex: 1 }}
+        enableTorch={flashMode}
         facing={facing}
         autofocus="on"
         ratio="4:3"
@@ -307,13 +309,11 @@ export default function Scanner() {
         <View className="absolute top-10 right-4 flex flex-col items-center gap-4">
           {/* Flash Toggle */}
           <TouchableOpacity
-            onPress={() =>
-              setFlashMode((current) => (current === "on" ? "off" : "on"))
-            }
+            onPress={() => setFlashMode((current) => !current)}
             className="bg-black/50 p-3 rounded-full"
           >
             <Text className="text-white text-xl">
-              {flashMode === "on" ? "⚡" : "⚡️"}
+              {flashMode === true ? "⚡️ on" : "⚡️ off"}
             </Text>
           </TouchableOpacity>
 
@@ -362,11 +362,11 @@ export default function Scanner() {
                 <>
                   <Image
                     source={{ uri: capturedImage }}
-                    style={{ width: "100%", height: 400 }}
+                    style={{ width: "100%", height: 300 }}
                     className="rounded-xl"
                   />
                   <View className="mt-4 flex flex-col items-center">
-                    <Text className="text-2xl font-bold text-center mb-2">
+                    <Text className="text-2xl font-bold text-center mb-2 px-2 capitalize">
                       {insectName}
                     </Text>
                     <Text className="text-base text-justify mb-2 text-black-300">
@@ -374,7 +374,9 @@ export default function Scanner() {
                     </Text>
                   </View>
 
-                  <ScrollView className="h-[260px]">
+                  <ScrollView
+                    className={`${isValidInsect ? "h-[150px]" : "h-0"}`}
+                  >
                     <View className="mt-4 flex flex-col gap-4 ">
                       <Text className="text-base text-justify mb-2 text-black-300">
                         {description}
@@ -397,7 +399,7 @@ export default function Scanner() {
                     >
                       <Text className="text-black font-semibold">Cancel</Text>
                     </TouchableOpacity>
-                    {!isValidInsect && (
+                    {isValidInsect && (
                       <TouchableOpacity
                         onPress={submitHandler}
                         className="bg-blue-500 px-4 py-2 rounded-full"

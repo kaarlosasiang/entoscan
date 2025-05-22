@@ -1,8 +1,13 @@
 import LoadingPage from "@/app/components/LoadingPage";
 import { account, avatar } from "@/lib/appwrite";
+import { Redirect, useRouter } from "expo-router";
 import { useContext, createContext, useState, useEffect } from "react";
 import { ActivityIndicator, SafeAreaView, Text } from "react-native";
 const AuthContext = createContext();
+
+const isEmptyObject = (obj) => {
+  return Object.keys(obj).length === 0;
+};
 
 const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -10,9 +15,11 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(false);
   const [role, setRole] = useState(false);
 
+  const router = useRouter();
+
   useEffect(() => {
     init();
-  },[user]);
+  }, [user]);
 
   const init = async () => {
     checkAuth();
@@ -26,9 +33,10 @@ const AuthProvider = ({ children }) => {
       const responseUser = await account.get();
       const userAvatar = avatar.getInitials(responseUser.name);
       setUser({ ...responseUser, avatar: userAvatar.toString() });
-      setRole(responseUser.labels[0]);
+      setRole(responseUser.prefs.role);
     } catch (error) {
-      console.error(error.message);
+      // console.error("Check Auth:",error.message);
+      router.replace("/signin");
       setUser(false);
     } finally {
       setIsLoading(false);
@@ -46,10 +54,13 @@ const AuthProvider = ({ children }) => {
         password
       );
       const responseUser = await account.get();
-
+      console.log(responseUser.prefs);
+      if (isEmptyObject(responseUser.prefs))
+        await account.updatePrefs({ role: "faculty" });
+      checkAuth();
       setSession(responseSession);
       setUser(responseUser);
-      setRole(responseUser.labels[0]);
+      setRole(responseUser.prefs.role);
     } catch (error) {
       console.error(error.message);
     } finally {
@@ -70,7 +81,16 @@ const AuthProvider = ({ children }) => {
     }
   };
 
-  const contextData = { session, user, role, signin, signout, setSession, setUser, setRole };
+  const contextData = {
+    session,
+    user,
+    role,
+    signin,
+    signout,
+    setSession,
+    setUser,
+    setRole,
+  };
   return (
     <AuthContext.Provider value={contextData}>
       {isLoading ? <LoadingPage /> : children}
